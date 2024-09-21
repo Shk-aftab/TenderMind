@@ -8,6 +8,8 @@ from langchain_community.vectorstores.faiss import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_cohere import CohereEmbeddings
 from dotenv import load_dotenv
+import csv
+import os.path
 
 # Load environment variables from .env file (optional)
 load_dotenv()
@@ -107,7 +109,7 @@ def query_vector_store(db, query, top_k=5):
 
 def generate_structured_yaml(retrieved_text):
     prompt = f"""
-    Extrahiere die folgenden Informationen aus dem Ausschreibungsdokument und strukturiere sie in das angegebene YAML-Format. Achte besonders darauf, die *Projektphasen mit Zeitangaben* und *Kontaktinformationen* zu extrahieren. Gib das Ergebnis ohne zusätzliche Formatierung oder Codeblöcke aus. Wenn ein Feld nicht verfügbar ist, setze seinen Wert auf "Nicht angegeben".
+   extrahieren Sie die folgenden Informationen aus dem bereitgestellten Text und strukturieren Sie sie gemäß dem angegebenen YAML-Format. Achten Sie besonders darauf, die *Projektphasen mit Zeitangaben, den **Namen der ausschreibenden Firma* und den *Ausschreibungstitel* zu extrahieren. Geben Sie das Ergebnis ohne zusätzliche Formatierung oder Codeblöcke aus. Wenn ein Feld nicht verfügbar ist, setzen Sie seinen Wert auf "Nicht angegeben"
 
     ### Auszugsweiser Text:
     {retrieved_text}
@@ -126,18 +128,12 @@ def generate_structured_yaml(retrieved_text):
     Hauptziele: "value"
     Allgemeine Anforderungen: "value"
     Besondere Anforderungen: "value"
-    Phasen und Meilensteine: 
-      - Anforderungsanalyse: "value"
-      - Design und Architekturplanung: "value"
-      - Entwicklung & Implementierung: "value"
-      - Testphase: "value"
-      - Schulung und Einführung: "value"
-      - Abnahme und Übergabe: "value"
+    Phasen und Meilensteine: "value"
     Einreichungsrichtlinien: "value"
     Technische Spezifikationen: "value"
     Rechtliche und Compliance-Anforderungen: "value"
     Support und Wartung: "value"
-    
+
     . und Qualifikationen: "value"
     Kontaktinformationen:
       Name: "value"
@@ -146,15 +142,13 @@ def generate_structured_yaml(retrieved_text):
       Adresse: "value"
     """
 
-    # Proceed with the rest of the generation process...
-
     try:
         response = cohere_client.generate(
             model='command-xlarge-nightly',
             prompt=prompt,
-            max_tokens=1500,
+            max_tokens=2000,
             temperature=0.3,
-            k=5,
+            k=25,
             stop_sequences=["}"]
         )
         generated_text = response.generations[0].text.strip()
@@ -174,17 +168,17 @@ def generate_structured_yaml(retrieved_text):
 
         try:
             structured_yaml = yaml.safe_load(generated_text)
-            return structured_yaml
+            return structured_yaml, generated_text, True
         except yaml.YAMLError as ye:
             print(f"YAMLDecodeError: {ye}")
             malformed_yaml_path = "output/malformed_yaml.yaml"
             with open(malformed_yaml_path, 'w', encoding='utf-8') as f:
                 f.write(generated_text)
             print(f"Malformed YAML saved at {malformed_yaml_path}")
-            return {}
+            return {}, generated_text, False
     except Exception as e:
         print(f"Error generating YAML: {e}")
-        return {}
+        return {}, '', False
 
 
 def save_yaml_to_file(structured_data, output_path):
@@ -199,38 +193,43 @@ def save_yaml_to_file(structured_data, output_path):
         print(f"Error saving structured YAML to file: {e}")
 
 
-# Example usage
-if __name__ == "__main__":
-    file_path = r"CPQ_Ausschreibung1.pdf"
-
-    # Convert PDF to vector store
-    db = convert_to_vector_store(file_path)
+def get_RAG(file_paths):
+    db = convert_to_vector_store(file_paths)   
     save_path = "store/vectorstore"
     save_vector_store(db, save_path)
 
     # Load the vector store
-    # Updated embedding model to multilingual (if available)
-    embedding = CohereEmbeddings(model="embed-multilingual-v2.0")  # Use appropriate model for German
+    embedding = CohereEmbeddings(model="embed-multilingual-v2.0")
     db = load_vector_store(save_path, embedding)
 
-    # Query the vector store with a German query
-    # query1 = "Was sind wichtige Punkte in der Ausschreibung?"
-    # query2 = "Liste die Kontaktinformationen, einschließlich Name, E-Mail, und Rolle, sowie die Projektphasen mit Zeitangaben."
-    query = "What are important things in the tender?"
-    results = query_vector_store(db, query, top_k=5)
+    # Query the vector store
+    # query="Liste die Kontaktinformationen, einschließlich Name, E-Mail, und Rolle, sowie die Projektphasen mit Zeitangaben."
+    query="Was sind wichtige Punkte in der Ausschreibung, insbesondere Firmenname, Projektphasen und titel?"
+    # query = "What are important things in the tender?"
+    results = query_vector_store(db, query, top_k=10)
 
     # Combine retrieved texts
     retrieved_text = "\n".join([doc.page_content for doc in results])
 
     # Generate structured YAML
-    structured_data = generate_structured_yaml(retrieved_text)
-
-    # Print and save the structured YAML
-    if structured_data:
-        print(yaml.dump(structured_data, sort_keys=False, indent=4, allow_unicode=True))
+    structured_data, generated_text, is_success = generate_structured_yaml(retrieved_text)
+    if is_success:
+        # Parsing was successful
+        structured_yaml_str = yaml.dump(structured_data, sort_keys=False, indent=4, allow_unicode=True)
+        print(structured_yaml_str)
 
         # Save the structured YAML to a file
-        output_yaml_path = "output/structured_tender.yaml"
+        output_yaml_path = f"output/structured_tender_{os.path.basename(file_paths)}.yaml"
         save_yaml_to_file(structured_data, output_yaml_path)
     else:
+        # Parsing failed
+        structured_yaml_str ="Failed to generate structured YAML."
+
         print("Failed to generate structured YAML.")
+    return structured_yaml_str
+
+
+if __name__ == "__main__":
+    # List of PDF files to process
+    file_paths = "CPQ_Ausschreibung2.pdf"
+    get_RAG(file_paths=file_paths)

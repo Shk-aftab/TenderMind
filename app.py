@@ -4,6 +4,10 @@ from werkzeug.utils import secure_filename
 from models import Tender
 from extensions import db
 import json
+import yaml
+from RAG_21 import get_RAG
+from Conv_RAG import ChatManager
+from flask import g
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -14,6 +18,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # This is optional but rec
 
 # Initialize db with the Flask app
 db.init_app(app)
+
 
 # Create the database tables if they don't exist
 with app.app_context():
@@ -82,6 +87,7 @@ def upload_tender(tender_id):
 def send_to_rag_application(filename):
     # This function will handle sending the file to RAG and getting the JSON response.
     # Here, we use a mock response for demonstration purposes.
+    """
     return {
     "Overview": {
         "Tender Title": "Not Provided",
@@ -116,7 +122,20 @@ def send_to_rag_application(filename):
         "Phone": "Not Provided",
         "Address": "Not Provided"
     }
-}
+    }
+    """
+    yaml_string = get_RAG(filename)
+    # Load the YAML string
+    data = yaml.safe_load(yaml_string)
+
+    # Convert to JSON string
+    json_string = json.dumps(data, indent=4, ensure_ascii=False)
+
+    print(json_string)
+    return json_string
+
+
+
 
 
 # Reusable store function
@@ -180,19 +199,45 @@ def get_response():
     return jsonify({'response': bot_response, 'source': source_info})
 
 
+@app.route('/start_conversation', methods=['POST'])
+def start_conversation():
+    vector_store_path = "store/vectorstore"
+    embedding_model = "embed-multilingual-v2.0"  # Use the same multilingual model
+    yaml_path = "output/raw_generated_yaml.yaml"  # Path to your generated YAML
+    g.chat_manager = ChatManager(vector_store_path, embedding_model, yaml_path)
+    data = request.json
+    topic = data.get('topic')
+    message = g.chat_manager.start_conversation(topic)
+    return jsonify({'message': message})
+
+@app.route('/send_message', methods=['POST'])
+def send_message():
+    data = request.json
+    topic = data.get('topic')
+    user_message = data.get('message')
+    ai_response = g.chat_manager.send_message(topic, user_message)
+    return jsonify({'response': ai_response})
+
+@app.route('/end_conversation', methods=['POST'])
+def end_conversation():
+    data = request.json
+    topic = data.get('topic')
+    message = g.chat_manager.end_conversation(topic)
+    return jsonify({'message': message})
+
 @app.route("/about")
 def about():
-    return render_template("about.html", app_data=app_data)
+    return render_template("about.html", app_data=None)
 
 
 @app.route("/service")
 def service():
-    return render_template("service.html", app_data=app_data)
+    return render_template("service.html", app_data=None)
 
 
 @app.route("/contact")
 def contact():
-    return render_template("contact.html", app_data=app_data)
+    return render_template("contact.html", app_data=None)
 
 
 if __name__ == "__main__":
