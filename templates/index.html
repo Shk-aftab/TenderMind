@@ -1,0 +1,19 @@
+{% extends 'layout.html' %}
+
+{% block body %}
+<div class="container-fluid">
+    <!-- Heading -->
+    <h1 class="display-4">Welcome to Tender Wizard</h1>
+
+    <!-- Form for document upload -->
+    <form action="/dashboard" method="POST" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="formFile" class="form-label">Upload Document</label>
+        <input class="form-control" type="file" id="formFile" name="file" required>
+      </div>
+
+      <!-- Submit Button -->
+      <button type="submit" class="btn btn-primary btn-lg">Submit and Proceed to Dashboard</button>
+    </form>
+</div>
+{% endblock %}
