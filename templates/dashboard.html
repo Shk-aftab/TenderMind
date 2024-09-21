@@ -12,7 +12,12 @@
 <div class="container-fluid pt-2">
     <div class="row">
         <!-- Left Sidebar (2 columns) -->
-        <nav class="col-md-2 bg-light sidebar d-flex flex-column align-items-center py-4" style="min-height: 100vh;">
+        <nav class="col-md-2 bg-light sidebar d-flex flex-column align-items-center py-4 position-fixed" style="top: 0; left: 0; height: 100vh; z-index: 1; width: 250px;">
+            <!-- Logo Space at the Top -->
+            <div class="logo-container text-center mb-4">
+                <img src="{{ url_for('static', filename='encoway_logo_2.png') }}" alt="Logo" class="img-fluid" style="max-width: 80%;">
+            </div>
+        
             <!-- Center the button -->
             <button class="btn btn-primary mb-4" style="width: 80%;" data-bs-toggle="modal" data-bs-target="#createTenderModal">
                 Create New Tender
@@ -69,7 +74,7 @@
         </nav>
 
         <!-- Main Content -->
-        <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-4">
+        <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-4" style="margin-left: 250px;">
 
 
 
