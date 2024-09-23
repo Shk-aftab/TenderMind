@@ -1,6 +1,6 @@
-# Tender Wizard
+# TenderMind
 
-Tender Wizard is a Flask-based web application designed to streamline the management of tenders. Leveraging AI-powered data extraction, Tender Wizard allows users to upload tender documents, automatically extract and organize key information, and interact through an integrated chat interface.
+TenderMind is a Flask-based web application designed to streamline the management of tenders. Leveraging AI-powered data extraction, TenderMind allows users to upload tender documents, automatically extract and organize key information, and interact through an integrated chat interface.
 
 ## Features
 
@@ -30,8 +30,8 @@ Tender Wizard is a Flask-based web application designed to streamline the manage
 
 1. **Clone the Repository**
     ```bash
-    git clone https://github.com/yourusername/tender-wizard.git
-    cd tender-wizard
+    git clone https://github.com/yourusername/tenderMind.git
+    cd tenderMind
     ```
 
 2. **Create a Virtual Environment**
@@ -82,7 +82,7 @@ Tender Wizard is a Flask-based web application designed to streamline the manage
 
 ## Screenshots
 
-![Tender Wizard UI](UI.png)
+![TenderMind UI](UI.png)
 
 ## License
 
