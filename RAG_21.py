@@ -8,7 +8,6 @@ from langchain_community.vectorstores.faiss import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_cohere import CohereEmbeddings
 from dotenv import load_dotenv
-import csv
 import os.path
 
 # Load environment variables from .env file (optional)
@@ -62,7 +61,7 @@ def convert_to_vector_store(file_path):
         preprocessed_pages.append(preprocessed_content)
 
     # Save preprocessed pages to a text file for debugging purposes
-    pages_text_path = "output/pages_preprocessed.txt"
+    pages_text_path = "uploads/pages_preprocessed.txt"
     os.makedirs(os.path.dirname(pages_text_path), exist_ok=True)
 
     with open(pages_text_path, 'w', encoding='utf-8') as f:
@@ -109,8 +108,8 @@ def query_vector_store(db, query, top_k=5):
 
 def generate_structured_yaml(retrieved_text):
     prompt = f"""
-   extrahieren Sie die folgenden Informationen aus dem bereitgestellten Text und strukturieren Sie sie gemäß dem angegebenen YAML-Format. Achten Sie besonders darauf, die *Projektphasen mit Zeitangaben, den **Namen der ausschreibenden Firma* und den *Ausschreibungstitel* zu extrahieren. Geben Sie das Ergebnis ohne zusätzliche Formatierung oder Codeblöcke aus. Wenn ein Feld nicht verfügbar ist, setzen Sie seinen Wert auf "Nicht angegeben"
-
+   extrahieren Sie die folgenden Informationen aus dem bereitgestellten Text und strukturieren Sie sie gemäß dem angegebenen YAML-Format. Achten Sie besonders darauf, die **Projektphasen mit Zeitangaben**, den **Namen der ausschreibenden Firma** und den **Ausschreibungstitel** zu extrahieren. Geben Sie das Ergebnis ohne zusätzliche Formatierung oder Codeblöcke aus. Wenn ein Feld nicht verfügbar ist, setzen Sie seinen Wert auf "Nicht angegeben"
+    Please suggest a possible revenue potential in USD, based on the document and your prior knowledge on budgeting. Give a specific number and put it into estimated Revenue_Potential.
     ### Auszugsweiser Text:
     {retrieved_text}
 
@@ -122,6 +121,7 @@ def generate_structured_yaml(retrieved_text):
       Abgabefrist: "value"
       Referenznummer: "value"
     Kosteninformationen:
+        
       Budgetinformationen: "value"
       Zahlungsbedingungen: "value"
       Kostenaufgliederung: "value"
@@ -140,6 +140,7 @@ def generate_structured_yaml(retrieved_text):
       E-Mail: "value"
       Telefon: "value"
       Adresse: "value"
+    Revenue_Potential: "value"
     """
 
     try:
@@ -154,13 +155,13 @@ def generate_structured_yaml(retrieved_text):
         generated_text = response.generations[0].text.strip()
 
         # Remove code block delimiters if present
-        if generated_text.startswith("yaml"):
-            generated_text = generated_text[len("yaml"):].strip()
-        if generated_text.endswith(""):
-            generated_text = generated_text[:-len("")].strip()
+        if generated_text.startswith("```yaml"):
+            generated_text = generated_text[len("```yaml"):].strip()
+        if generated_text.endswith("```"):
+            generated_text = generated_text[:-len("```")].strip()
 
         # Saving raw YAML to a file while handling UTF-8 characters correctly
-        raw_yaml_path = "output/raw_generated_yaml.yaml"
+        raw_yaml_path = "uploads/raw_generated_yaml.yaml"
         os.makedirs(os.path.dirname(raw_yaml_path), exist_ok=True)
         with open(raw_yaml_path, 'w', encoding='utf-8') as f:
             f.write(generated_text)
@@ -171,7 +172,7 @@ def generate_structured_yaml(retrieved_text):
             return structured_yaml, generated_text, True
         except yaml.YAMLError as ye:
             print(f"YAMLDecodeError: {ye}")
-            malformed_yaml_path = "output/malformed_yaml.yaml"
+            malformed_yaml_path = "uploads/malformed_yaml.yaml"
             with open(malformed_yaml_path, 'w', encoding='utf-8') as f:
                 f.write(generated_text)
             print(f"Malformed YAML saved at {malformed_yaml_path}")
@@ -193,8 +194,11 @@ def save_yaml_to_file(structured_data, output_path):
         print(f"Error saving structured YAML to file: {e}")
 
 
-def get_RAG(file_paths):
-    db = convert_to_vector_store(file_paths)   
+def get_RAG(file_path):
+    print(f"Processing file: {file_path}")
+
+    # Convert PDF to vector store
+    db = convert_to_vector_store(file_path)
     save_path = "store/vectorstore"
     save_vector_store(db, save_path)
 
@@ -203,9 +207,7 @@ def get_RAG(file_paths):
     db = load_vector_store(save_path, embedding)
 
     # Query the vector store
-    # query="Liste die Kontaktinformationen, einschließlich Name, E-Mail, und Rolle, sowie die Projektphasen mit Zeitangaben."
     query="Was sind wichtige Punkte in der Ausschreibung, insbesondere Firmenname, Projektphasen und titel?"
-    # query = "What are important things in the tender?"
     results = query_vector_store(db, query, top_k=10)
 
     # Combine retrieved texts
@@ -213,23 +215,26 @@ def get_RAG(file_paths):
 
     # Generate structured YAML
     structured_data, generated_text, is_success = generate_structured_yaml(retrieved_text)
+
     if is_success:
-        # Parsing was successful
+        # Return the structured YAML as a string, not a list
         structured_yaml_str = yaml.dump(structured_data, sort_keys=False, indent=4, allow_unicode=True)
         print(structured_yaml_str)
 
         # Save the structured YAML to a file
-        output_yaml_path = f"output/structured_tender_{os.path.basename(file_paths)}.yaml"
+        output_yaml_path = f"uploads/structured_tender_{os.path.basename(file_path)}.yaml"
         save_yaml_to_file(structured_data, output_yaml_path)
+        return structured_yaml_str
     else:
         # Parsing failed
-        structured_yaml_str ="Failed to generate structured YAML."
-
         print("Failed to generate structured YAML.")
-    return structured_yaml_str
+        return "Failed to generate structured YAML."
+    
 
 
 if __name__ == "__main__":
     # List of PDF files to process
-    file_paths = "CPQ_Ausschreibung2.pdf"
-    get_RAG(file_paths=file_paths)
+    file_paths = [r"CPQ_Ausschreibung2.pdf"]
+
+    for file_path in file_paths:
+        get_RAG(file_path)

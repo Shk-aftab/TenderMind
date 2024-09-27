@@ -1,41 +1,51 @@
 import os
 from flask import Flask, request, redirect, url_for, render_template, jsonify
 from werkzeug.utils import secure_filename
-from models import Tender
-from extensions import db
 import json
-import yaml
+
 from RAG_21 import get_RAG
-from Conv_RAG import ChatManager
-from flask import g
+from Conv_RAG import ChatManager, Conversation,ChatWithoutTopic
 
+import yaml
+
+from complexity import get_assesment
+
+from flask_sqlalchemy import SQLAlchemy
+
+
+
+import re
+
+# Initialize the Flask app
 app = Flask(__name__)
+
+# Configure the app and set the upload folder
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tenders.db'  # Correct database URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # Disable SQLAlchemy event system for performance
 
-# Configure the database URI and any other settings
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tenders.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # This is optional but recommended to avoid warnings
+# Initialize SQLAlchemy
+db = SQLAlchemy(app)
 
-# Initialize db with the Flask app
-db.init_app(app)
+# Define the Tender model
+class Tender(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    json_data = db.Column(db.Text, nullable=False)  # Store JSON data as text
+    metrics = db.Column(db.Text, nullable=True)  # Any metrics stored as text
+
+# Initialize the database and create tables if they don't exist
+def init_db():
+    with app.app_context():
+        db.create_all()
+
+# Call init_db() to create tables
+init_db()
 
 
-# Create the database tables if they don't exist
-with app.app_context():
-    db.create_all()
-
-
-
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-# Corrected the spelling of the route here
-@app.route("/dashboard",  methods=['GET', 'POST'])
+@app.route("/",  methods=['GET', 'POST'])
 def dashboard():
     tenders = Tender.query.all()
-    print(tenders)
     return render_template('dashboard.html', tenders=tenders)
 
 @app.route('/create_tender', methods=['POST'])
@@ -56,92 +66,51 @@ def create_tender():
         # Send file to RAG and get response (simulate here)
         rag_output = send_to_rag_application(file_path)
 
-        # Save tender data
-        new_tender = Tender(name=name, json_data=json.dumps(rag_output))
+        json_string = json.dumps(rag_output)
+        json_data_string = re.sub(r'\bnull\b', '"Not Provided"', json_string)
+
+        rag_graph_output = get_assesment(file_path)
+        #parsed_graph_yaml = yaml.safe_load(rag_graph_output)        
+
+        # Update the tender with the RAG output (json data)
+        json_graph_string = json.dumps(rag_graph_output)
+        json_graph_string = re.sub(r'\bnull\b', '"Not Provided"', json_graph_string)
+
+        # Create new Tender object with the parsed data
+        new_tender = Tender(name=name, json_data=json_data_string, metrics=json_graph_string)
+
+        # Save to database
         db.session.add(new_tender)
         db.session.commit()
 
-    return redirect(url_for('dashboard'))
-
-
-# Route to handle file upload and save tender data
-@app.route('/upload_tender/<int:tender_id>', methods=['POST'])
-def upload_tender(tender_id):
-    file = request.files['file']
-    tender = Tender.query.get_or_404(tender_id)
-
-    if file:
-        filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(filename)
-
-        # Placeholder for sending to RAG application
-        rag_output = send_to_rag_application(filename)
-
-        # Update the tender with the RAG output (json data)
-        tender.json_data = json.dumps(rag_output)
-        db.session.commit()
 
     return redirect(url_for('dashboard'))
+
 
 
 def send_to_rag_application(filename):
-    # This function will handle sending the file to RAG and getting the JSON response.
-    # Here, we use a mock response for demonstration purposes.
-    """
-    return {
-    "Overview": {
-        "Tender Title": "Not Provided",
-        "Issuing Company": "Not Provided",
-        "Deadline": "Not Provided",
-        "Reference Number": "Not Provided"
-    },
-    "Cost Information": {
-        "Budget Information": "Es ist zu erwarten, dass das Projekt signifikant in das Budget eingreift, aber eine detaillierte Kostenübersicht wird in der Verhandlungsphase besprochen.",
-        "Payment Terms": "Not Provided",
-        "Cost Breakdown": "Not Provided"
-    },
-    "Key Objectives": "Entwicklung einer umfassenden Vertriebssoftware-Lösung, die Außendienstmitarbeiter unterstützt, Angebote generiert und Innendienst-Vertriebsaktivitäten verwaltet.",
-    "General Requirements": "- Multi-Plattform-Kompatibilität mit Windows, macOS, Android und iOS. - Benutzerfreundlichkeit mit intuitiver Benutzeroberfläche und Unterstützung für verschiedene Mitarbeiter-Level. - Hochgradige Sicherheit mit Datenschutzstandards, Verschlüsselung und rollenbasierter Zugangskontrolle. - Nahtlose Integration mit bestehenden und zukünftigen IT-Systemen.",
-    "Special Requirements": "- Geolokalisierungsintegration für optimierte Kundenbesuche und Routenplanung. - Echtzeit-Produkt- und Lagerbestandsinformationen für Außendienstmitarbeiter. - Augmented Reality (AR) für mobile Produktdemonstrationen. - KPI-Tracking und Aufgabenverwaltung für Innendienst-Vertriebsaktivitäten.",
-    "Phases and Milestones": {
-        "Anforderungsanalyse": "0-1 Monat",
-        "Design und Architekturplanung": "1-2 Monate",
-        "Entwicklung und Implementierung": "3-9 Monate",
-        "Testphase": "9-10 Monate",
-        "Schulung und Einführung": "10-11 Monate",
-        "Abnahme und Übergabe": "12. Monat"
-    },
-    "Submission Guidelines": "Not Provided",
-    "Technical Specifications": "- Agile Entwicklungsmethoden (Scrum/Kanban) - Meilensteinplanung mit regelmäßigen Überprüfungen - API-Dokumentation, Benutzerhandbücher und Schulungsmaterialien - Offline-Funktionalität für Außendienstmitarbeiter - Automatische Angebotsübersetzung mit Berücksichtigung kultureller Nuancen",
-    "Legal and Compliance Requirements": "ISO 27001 Zertifizierung und Compliance-Dokumentation",
-    "Support and Maintenance": "- Mindestens 24 Monate Garantie nach Abnahme - Kostenlose Fixes für sicherheitsrelevante und kritische Fehler - Umfangreiche Support- und Wartungsverträge mit 24/7-Support und SLA - Schulungsprogramme für Benutzer und Administratoren",
-    "Project Team and Qualifications": "Not Provided",
-    "Contact Information": {
-        "Name": "Not Provided",
-        "Email": "Not Provided",
-        "Phone": "Not Provided",
-        "Address": "Not Provided"
-    }
-    }
-    """
+    # Get the YAML content (from RAG)
     yaml_string = get_RAG(filename)
-    # Load the YAML string
     data = yaml.safe_load(yaml_string)
 
-    # Convert to JSON string
-    json_string = json.dumps(data, indent=4, ensure_ascii=False)
+    if isinstance(data, list):
+        data = data[0]
 
-    print(json_string)
-    return json_string
+    return data
 
+"""def yaml_to_json_html(yaml_input):
+    parsed_yaml = yaml.safe_load(yaml_input)
+    json_string = json.dumps(json_content)
 
+    json_string = re.sub(r'\bnull\b', '"Not Provided"', json_string)
 
+    return json_string"""
 
 
 # Reusable store function
 def store_tender_data(tender_id, json_data):
     tender = Tender.query.get_or_404(tender_id)
-    tender.json_data = json.dumps(json_data)
+    tender.json_data = json.dumps(json_data, ensure_ascii=False)
     db.session.commit()
 
 @app.route('/get_tender_data/<int:tender_id>', methods=['GET'])
@@ -163,11 +132,15 @@ def get_tender_data(tender_id):
 @app.route('/process_addons', methods=['POST'])
 def process_addons():
     data = request.json
+    print(data)
+
     tender_id = data.get('tender_id')
     selected_addons = data.get('addons', [])
 
-    # Retrieve the tender data
+    # Assuming you have a Tender model
     tender = Tender.query.get_or_404(tender_id)
+
+    # Load the tender's JSON data (assuming it's stored as text in the database)
     tender_data = json.loads(tender.json_data)
 
     # Collect selected addons data
@@ -181,63 +154,132 @@ def process_addons():
 
     return jsonify({'card_data_addons': card_data_addons})
 
+@app.route('/graph_data/<int:tender_id>')
+def graph_data(tender_id):
 
+    # Fetch the tender data based on tender_id
+    tender = Tender.query.get_or_404(tender_id)
+
+    # Assuming the `json_data` field contains the parsed JSON string as shown in your example
+    tender_data = json.loads(tender.metrics)
+
+    print(tender_data)
+    # Ensure the data structure matches the frontend expectations
+    formatted_data = {
+        "Complexity": {
+            "Rating": tender_data.get("Complexity", {}).get("Rating", "Not Provided"),
+            "Verification_Sentence": tender_data.get("Complexity", {}).get("Verification Sentence", ".")
+        },
+        "Scalability": {
+            "Rating": tender_data.get("Scalability", {}).get("Rating", "Not Provided"),
+            "Verification_Sentence": tender_data.get("Scalability", {}).get("Verification Sentence", ".")
+        },
+        "Integration_Requirements": {
+            "Rating": tender_data.get("Integration Requirements", {}).get("Rating", "Not Provided"),
+            "Verification_Sentence": tender_data.get("Integration Requirements", {}).get("Verification Sentence", ".")
+        },
+        "Time_Feasibility": {
+            "Rating": tender_data.get("Time Feasibility", {}).get("Rating", "Not Provided"),
+            "Verification_Sentence": tender_data.get("Time Feasibility", {}).get("Verification Sentence", ".")
+        },
+        "Days_Left": tender_data.get("Days Left to Submit the Proposal", "Not Available")
+    }
+
+    # Return the formatted data as JSON response
+    return jsonify(formatted_data)
+
+@app.route('/start_conversation', methods=['POST'])
+def start_conversation():
+    global current_chat_manager, current_conversation_type, current_topic
+
+    vector_store_path = "store/vectorstore"
+    embedding_model = "embed-multilingual-v2.0"
+    yaml_path = "uploads/structured_tender_CPQ_Ausschreibung2.yaml"
+    data = request.json
+    topic = data.get('topic')
+
+    if not topic:
+        return jsonify({'error': 'Topic is required to start a conversation.'}), 400
+
+    chat_manager = ChatManager(vector_store_path, embedding_model, yaml_path)
+    message = chat_manager.start_conversation(topic)
+
+    # Set global conversation state
+    current_chat_manager = chat_manager
+    current_conversation_type = 'topic'
+    current_topic = topic
+
+    return jsonify({'message': message})
+
+
+@app.route('/start_on_the_fly', methods=['POST'])
+def start_conversation_on_the_fly():
+    global current_chat_manager, current_conversation_type, current_topic
+
+    vector_store_path = "store/vectorstore"
+    embedding_model = "embed-multilingual-v2.0"
+    chat_manager_general = ChatWithoutTopic(vector_store_path, embedding_model)
+    message = chat_manager_general.start_conversation()
+    print("message is ", message)
+
+    # Set global conversation state
+    current_chat_manager = chat_manager_general
+    current_conversation_type = 'general'
+    current_topic = None
+
+    return jsonify({'message': message})
 
 
 @app.route('/get_response', methods=['POST'])
 def get_response():
-    data = request.get_json()
+    global current_chat_manager, current_conversation_type, current_topic
+
+    data = request.json
     user_message = data.get('message')
 
-    # Here you can process the user message and generate a response
-    # For now, we'll just return a simple response
-    bot_response = f"You said: {user_message}"
+    if not current_chat_manager:
+        return jsonify({'error': 'No active conversation. Please start a conversation first.'}), 400
 
-    # You can replace the below with logic to retrieve information from your document
-    source_info = "CPQ Tender (Page 5)"  # Example source information
+    if current_conversation_type == 'topic':
+        if not current_topic:
+            return jsonify({'error': 'Topic is not set for the current conversation.'}), 400
+        response_data = current_chat_manager.send_message(current_topic, user_message)
+    elif current_conversation_type == 'general':
+        response_data = current_chat_manager.send_message(user_message)
+    else:
+        return jsonify({'error': 'Invalid conversation type.'}), 400
 
-    return jsonify({'response': bot_response, 'source': source_info})
+    if 'error' in response_data:
+        return jsonify({'error': response_data['error']}), 400
+    else:
+        return jsonify({
+            'response': response_data['ai_response'],
+            'source': response_data['references']  # References returned as 'source'
+        })
 
-
-@app.route('/start_conversation', methods=['POST'])
-def start_conversation():
-    vector_store_path = "store/vectorstore"
-    embedding_model = "embed-multilingual-v2.0"  # Use the same multilingual model
-    yaml_path = "output/raw_generated_yaml.yaml"  # Path to your generated YAML
-    g.chat_manager = ChatManager(vector_store_path, embedding_model, yaml_path)
-    data = request.json
-    topic = data.get('topic')
-    message = g.chat_manager.start_conversation(topic)
-    return jsonify({'message': message})
-
-@app.route('/send_message', methods=['POST'])
-def send_message():
-    data = request.json
-    topic = data.get('topic')
-    user_message = data.get('message')
-    ai_response = g.chat_manager.send_message(topic, user_message)
-    return jsonify({'response': ai_response})
 
 @app.route('/end_conversation', methods=['POST'])
 def end_conversation():
-    data = request.json
-    topic = data.get('topic')
-    message = g.chat_manager.end_conversation(topic)
+    global current_chat_manager, current_conversation_type, current_topic
+
+    if not current_chat_manager:
+        return jsonify({'message': 'No active conversation to end.'})
+
+    if current_conversation_type == 'topic':
+        if not current_topic:
+            return jsonify({'error': 'Topic is not set for the current conversation.'}), 400
+        message = current_chat_manager.end_conversation(current_topic)
+    elif current_conversation_type == 'general':
+        message = current_chat_manager.end_conversation()
+    else:
+        message = 'Invalid conversation type.'
+
+    # Clear global conversation state
+    current_chat_manager = None
+    current_conversation_type = None
+    current_topic = None
+
     return jsonify({'message': message})
-
-@app.route("/about")
-def about():
-    return render_template("about.html", app_data=None)
-
-
-@app.route("/service")
-def service():
-    return render_template("service.html", app_data=None)
-
-
-@app.route("/contact")
-def contact():
-    return render_template("contact.html", app_data=None)
 
 
 if __name__ == "__main__":
